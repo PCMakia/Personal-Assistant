@@ -77,8 +77,19 @@ class ChatApp(ctk.CTk):
         self.status_label = ctk.CTkLabel(status_bar, text="Status: Checking…", anchor="w")
         self.status_label.grid(row=0, column=0, sticky="ew", padx=10, pady=8)
 
-        self.clear_button = ctk.CTkButton(status_bar, text="Clear chat", width=110, command=self.clear_chat)
+        self.clear_button = ctk.CTkButton(
+            status_bar, text="Clear chat", width=110, command=self.clear_chat
+        )
         self.clear_button.grid(row=0, column=1, padx=10, pady=8)
+
+        # Temporary debug button to inspect backend CLS-M memory metrics.
+        self.metrics_button = ctk.CTkButton(
+            status_bar,
+            text="Show memory metrics",
+            width=150,
+            command=self.show_metrics,
+        )
+        self.metrics_button.grid(row=0, column=2, padx=(0, 10), pady=8)
 
         self.after(100, self._poll_events)
         self.after(150, self.refresh_health)
@@ -139,6 +150,18 @@ class ChatApp(ctk.CTk):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def show_metrics(self) -> None:
+        """Temporary helper: fetch and display recent memory metrics in the chat."""
+
+        def worker() -> None:
+            try:
+                data = self.client.get_memory_debug(limit=1)
+                self.events.put(_Event("metrics", (data, None)))
+            except Exception as exc:
+                self.events.put(_Event("metrics", ({}, exc)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def on_send(self) -> None:
         if self._pending_request:
             return
@@ -171,6 +194,26 @@ class ChatApp(ctk.CTk):
                 if ev.kind == "health":
                     (ok,) = ev.payload
                     self._set_status("Connected" if ok else "Disconnected")
+                elif ev.kind == "metrics":
+                    data, err = ev.payload  # type: ignore[misc]
+                    if err is not None:
+                        self._append_system(f"Memory metrics error: {err}")
+                    else:
+                        samples = data.get("samples") or []
+                        if not samples:
+                            self._append_system("Memory metrics: no samples yet.")
+                        else:
+                            latest = samples[0]
+                            summary = (
+                                "Memory metrics — "
+                                f"user_tokens={latest.get('user_tokens')}, "
+                                f"clsm_tokens={latest.get('clsm_tokens')}, "
+                                f"reply_tokens={latest.get('reply_tokens')}, "
+                                f"clsm_to_user_ratio={latest.get('clsm_to_user_ratio'):.2f}, "
+                                f"clsm_to_reply_ratio={latest.get('clsm_to_reply_ratio'):.2f}, "
+                                f"overlap_ratio_vs_reply={latest.get('overlap_ratio_vs_reply'):.2f}"
+                            )
+                            self._append_system(summary)
                 elif ev.kind == "reply":
                     reply, err = ev.payload  # type: ignore[misc]
                     if err is None:

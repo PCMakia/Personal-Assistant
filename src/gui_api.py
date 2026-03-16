@@ -33,3 +33,17 @@ class ChatClient:
             raise RuntimeError(f"Unexpected response from server: {data!r}")
         return data
 
+    def get_memory_debug(self, limit: int = 1) -> Dict[str, Any]:
+        """Fetch recent CLS-M memory metrics for debugging.
+
+        Returns the raw JSON payload from the backend debug endpoint.
+        """
+        params = {"limit": int(limit)}
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(self._url("/agent/memory/debug"), params=params)
+            resp.raise_for_status()
+            data = resp.json()
+        if not isinstance(data, dict) or "samples" not in data:
+            raise RuntimeError(f"Unexpected debug response from server: {data!r}")
+        return data
+

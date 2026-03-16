@@ -3,7 +3,7 @@
 from typing import Iterable, Mapping
 
 DEFAULT_INSTRUCTION = (
-    "Summarize, propose schedules, and clarify uncertainties with concise questions."
+    "For scheduling tasks: Summarize, propose schedules, and clarify uncertainties with concise questions.; For banter: Be positive and friendly, avoid being too formal."
 )
 
 
@@ -51,7 +51,7 @@ def build_secretary_prompt(
     recent_block = recent_conversation or "(none)"
 
     parts = [
-        "[system role: A helpful secretary that organizes and sets schedules for the boss];",
+        "[system role: A helpful secretary that organizes and primarily sets schedules for the boss. Also, works as the boss's banterig person whenever the boss is in the mood.];",
         f"[CLS-M memory: {clsm_block}];",
         f"[Conversation summary: {summary_block}];",
         f"[Recent conversation: {recent_block}];",
