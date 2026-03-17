@@ -2,9 +2,81 @@
 
 from typing import Iterable, Mapping
 
-DEFAULT_INSTRUCTION = (
-    "For scheduling tasks: Summarize, propose schedules, and clarify uncertainties with concise questions.; For banter: Be positive and friendly, avoid being too formal."
+_INSTRUCTION_BASE = (
+    "You are a personal assistant (a helpful secretary). Your mission is to help the user plan, decide, write, and execute tasks.\n"
+    "\n"
+    "Always:\n"
+    "- Be truthful about uncertainty; never invent facts.\n"
+    "- Keep responses compact unless the user asks for detail.\n"
+    "- Ask 1–3 clarifying questions only when needed.\n"
+    "- Use the user’s language and level of formality.\n"
+    "\n"
+    "Role:\n"
+    "- Default focus is scheduling, prioritization, and next-step execution help.\n"
+    "- If the user is playful, you may be light and friendly while staying useful.\n"
 )
+
+_INSTRUCTION_WORKING = (
+    _INSTRUCTION_BASE
+    + "\n"
+    + "Mode=WORKING\n"
+    + "Rules:\n"
+    + "- Optimize for completion: give an actionable plan, concrete outputs, and clear next steps.\n"
+    + "- Prefer bullets/checklists when useful.\n"
+    + "- If helpful, end with one explicit next action the user should do now.\n"
+)
+
+_INSTRUCTION_DISCUSSING = (
+    _INSTRUCTION_BASE
+    + "\n"
+    + "Mode=DISCUSSING\n"
+    + "Rules:\n"
+    + "- Optimize for understanding: ask 1–2 key questions if needed, then present options with pros/cons.\n"
+    + "- State assumptions and trade-offs; do not force a plan unless the user asks.\n"
+)
+
+_INSTRUCTION_BANTERING = (
+    _INSTRUCTION_BASE
+    + "\n"
+    + "Mode=BANTERING\n"
+    + "Rules:\n"
+    + "- Be light and playful, but keep jokes brief and never derail the task.\n"
+    + "- Still provide a helpful answer and practical next step(s).\n"
+)
+
+# Default behavior if no explicit mode is provided.
+DEFAULT_INSTRUCTION = _INSTRUCTION_WORKING
+
+
+def _extract_mode_command(user_input: str) -> tuple[str | None, str]:
+    """Return (mode, cleaned_user_input) based on leading /work /discuss /banter."""
+    raw = user_input.strip()
+    if not raw.startswith("/"):
+        return None, user_input
+
+    first, *rest = raw.split(maxsplit=1)
+    cmd = first.lower()
+    remaining = rest[0] if rest else ""
+
+    if cmd == "/work":
+        return "WORKING", remaining
+    if cmd == "/discuss":
+        return "DISCUSSING", remaining
+    if cmd == "/banter":
+        return "BANTERING", remaining
+
+    return None, user_input
+
+
+def _instruction_for_mode(mode: str | None) -> str:
+    """Select the instruction block for a given mode (defaults to WORKING)."""
+    m = (mode or "").strip().upper()
+    if m == "DISCUSSING":
+        return _INSTRUCTION_DISCUSSING
+    if m == "BANTERING":
+        return _INSTRUCTION_BANTERING
+    # WORKING (or unknown) falls back to the default working style.
+    return _INSTRUCTION_WORKING
 
 
 def _format_recent_conversation(recent_messages: Iterable[Mapping[str, str]]) -> str:
@@ -28,6 +100,7 @@ def build_secretary_prompt(
     clsm_memory: str = "",
     conversation_summary: str = "",
     instruction: str | None = None,
+    mode: str | None = None,
 ) -> str:
     """Return a single structured prompt string for the secretary LLM.
 
@@ -38,12 +111,15 @@ def build_secretary_prompt(
     CLS-M injection point: clsm_memory is the sole parameter for
     long-term context. Callers should pass the result of
     MemoryManager.retrieve_context(session_id, user_text) normalized
-    to a single string (e.g. newline- or bullet-joined). The prompt
-    shape and section order are fixed; no changes are required when
-    plugging in CLS-M later.
+    to a single string (e.g. newline- or bullet-joined).
     """
+    detected_mode, cleaned_user_input = _extract_mode_command(user_input)
     recent_conversation = _format_recent_conversation(recent_messages)
-    effective_instruction = instruction if instruction is not None else DEFAULT_INSTRUCTION
+    effective_instruction = (
+        instruction
+        if instruction is not None
+        else _instruction_for_mode(mode if mode is not None else detected_mode)
+    )
 
     # Safe substitution: use placeholder text when optional sections are empty
     clsm_block = clsm_memory.strip() or "(none)"
@@ -55,7 +131,7 @@ def build_secretary_prompt(
         f"[CLS-M memory: {clsm_block}];",
         f"[Conversation summary: {summary_block}];",
         f"[Recent conversation: {recent_block}];",
-        f"[User input: {user_input.strip()}];",
+        f"[User input: {cleaned_user_input.strip()}];",
         f"[Instruction: {effective_instruction}]",
     ]
     return "\n".join(parts)

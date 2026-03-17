@@ -179,6 +179,12 @@ class ChatApp(ctk.CTk):
 
         def worker() -> None:
             try:
+                # First fetch the structured prompt for debug display.
+                prompt_data = self.client.get_prompt_debug(msg)
+                prompt = str(prompt_data.get("prompt", ""))
+                self.events.put(_Event("prompt", (prompt,)))
+
+                # Then call the main chat endpoint to get the agent reply.
                 data = self.client.send_message(msg)
                 reply = str(data.get("reply", ""))
                 self.events.put(_Event("reply", (reply, None)))
@@ -194,6 +200,10 @@ class ChatApp(ctk.CTk):
                 if ev.kind == "health":
                     (ok,) = ev.payload
                     self._set_status("Connected" if ok else "Disconnected")
+                elif ev.kind == "prompt":
+                    (prompt,) = ev.payload
+                    if prompt:
+                        self._append_system(f"Prompt (debug):\n{prompt}")
                 elif ev.kind == "metrics":
                     data, err = ev.payload  # type: ignore[misc]
                     if err is not None:

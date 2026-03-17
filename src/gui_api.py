@@ -33,6 +33,16 @@ class ChatClient:
             raise RuntimeError(f"Unexpected response from server: {data!r}")
         return data
 
+    def get_prompt_debug(self, message: str) -> Dict[str, Any]:
+        """Fetch the structured prompt for a message without generating a reply."""
+        with httpx.Client(timeout=self.timeout) as client:
+            resp = client.post(self._url("/agent/prompt-debug"), json={"message": message})
+            resp.raise_for_status()
+            data = resp.json()
+        if not isinstance(data, dict) or "prompt" not in data:
+            raise RuntimeError(f"Unexpected prompt-debug response from server: {data!r}")
+        return data
+
     def get_memory_debug(self, limit: int = 1) -> Dict[str, Any]:
         """Fetch recent CLS-M memory metrics for debugging.
 
