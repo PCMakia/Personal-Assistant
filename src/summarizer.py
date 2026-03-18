@@ -11,8 +11,6 @@ from __future__ import annotations
 import re
 from typing import Literal, Optional
 
-from qwen3_embed import TextEmbedding
-
 from src.llm_client import LLMClient
 
 # Rough token estimate: ~4 chars per token for English
@@ -197,6 +195,8 @@ def bullet_summary_extractive(
     if len(sentences) <= k:
         selected = sentences
     else:
+        from qwen3_embed import TextEmbedding
+
         model = TextEmbedding(model_name=model_name)
         embeddings = list(model.embed(sentences))
 
@@ -269,6 +269,45 @@ def bullet_summary(
     if mode == "llm":
         return bullet_summary_llm(text, max_bullets=max_bullets, llm=llm)
     raise ValueError(f"Unknown mode: {mode}. Use 'extractive' or 'llm'.")
+
+
+def summarize_round(
+    user_content: str,
+    assistant_content: str,
+    *,
+    max_bullets: int = 5,
+    mode: Literal["extractive", "llm"] = "llm",
+    llm: Optional[LLMClient] = None,
+) -> str:
+    """Summarize a single chat round (one user message + one assistant reply).
+
+    Used for session-scoped conversation summary: each round gets its own
+    summarizer call. The result is intended to be appended to a running
+    conversation_summary (ephemeral, not persisted).
+
+    Args:
+        user_content: The user's message in this round.
+        assistant_content: The assistant's reply in this round.
+        max_bullets: Maximum bullet points for this round (default 5).
+        mode: "llm" (default) for abstractive via Ollama, "extractive" for
+              Qwen3-Embed (requires qwen3-embed).
+        llm: LLMClient for llm mode (default: new instance).
+
+    Returns:
+        Bullet-point summary of the round, or empty string if both inputs empty.
+    """
+    user = (user_content or "").strip()
+    assistant = (assistant_content or "").strip()
+    if not user and not assistant:
+        return ""
+
+    text = f"User: {user}\n\nAssistant: {assistant}"
+    return bullet_summary(
+        text,
+        max_bullets=max_bullets,
+        mode=mode,
+        llm=llm,
+    )
 
 
 if __name__ == "__main__":
