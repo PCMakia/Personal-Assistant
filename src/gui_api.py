@@ -10,6 +10,8 @@ import httpx
 class ChatClient:
     base_url: str = "http://localhost:8000"
     timeout: float = 120.0
+    # Must match backend `session_id` for reasoning cache and CLS-M scoping.
+    session_id: str = "default"
 
     def _url(self, path: str) -> str:
         return f"{self.base_url.rstrip('/')}{path}"
@@ -25,7 +27,10 @@ class ChatClient:
 
     def send_message(self, message: str) -> Dict[str, Any]:
         with httpx.Client(timeout=self.timeout) as client:
-            resp = client.post(self._url("/agent/chat"), json={"message": message})
+            resp = client.post(
+                self._url("/agent/chat"),
+                json={"message": message, "session_id": self.session_id},
+            )
             resp.raise_for_status()
             data = resp.json()
 
@@ -36,7 +41,10 @@ class ChatClient:
     def get_prompt_debug(self, message: str) -> Dict[str, Any]:
         """Fetch the structured prompt for a message without generating a reply."""
         with httpx.Client(timeout=self.timeout) as client:
-            resp = client.post(self._url("/agent/prompt-debug"), json={"message": message})
+            resp = client.post(
+                self._url("/agent/prompt-debug"),
+                json={"message": message, "session_id": self.session_id},
+            )
             resp.raise_for_status()
             data = resp.json()
         if not isinstance(data, dict) or "prompt" not in data:
@@ -55,5 +63,16 @@ class ChatClient:
             data = resp.json()
         if not isinstance(data, dict) or "samples" not in data:
             raise RuntimeError(f"Unexpected debug response from server: {data!r}")
+        return data
+
+    def get_reasoning_cache_debug(self, limit: int = 10) -> Dict[str, Any]:
+        """Fetch topic-head cache snapshot for the configured session."""
+        params = {"session_id": self.session_id, "limit": int(limit)}
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(self._url("/agent/reasoning-cache-debug"), params=params)
+            resp.raise_for_status()
+            data = resp.json()
+        if not isinstance(data, dict) or "topic_heads" not in data:
+            raise RuntimeError(f"Unexpected reasoning-cache response: {data!r}")
         return data
 

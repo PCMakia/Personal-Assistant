@@ -262,6 +262,61 @@ class MemoryStore:
                 ).fetchall()
             )
 
+    def fetch_base_node_ids_for_token_names(self, tokens: Iterable[str]) -> list[int]:
+        """Return ids of nodes with type 'base' whose names match given tokens (case-insensitive)."""
+        toks = sorted({t.strip().lower() for t in tokens if t and str(t).strip()})
+        if not toks:
+            return []
+        placeholders = ",".join("?" for _ in toks)
+        sql = f"""
+        SELECT id
+        FROM nodes
+        WHERE LOWER(type) = 'base' AND LOWER(name) IN ({placeholders})
+        """
+        with self._connect() as conn:
+            rows = conn.execute(sql, toks).fetchall()
+        return [int(r["id"]) for r in rows]
+
+    def fetch_node_types_by_ids(self, ids: Iterable[int]) -> dict[int, str]:
+        """Map node id -> type string for known ids."""
+        id_list = [int(i) for i in ids if int(i) > 0]
+        if not id_list:
+            return {}
+        placeholders = ",".join("?" for _ in id_list)
+        sql = f"SELECT id, type FROM nodes WHERE id IN ({placeholders})"
+        with self._connect() as conn:
+            rows = conn.execute(sql, id_list).fetchall()
+        return {int(r["id"]): str(r["type"] or "concept") for r in rows}
+
+    def fetch_nodes_by_exact_names(self, names: Iterable[str], limit: int = 64) -> list[sqlite3.Row]:
+        cleaned = [n.strip().lower() for n in names if n and n.strip()]
+        if not cleaned:
+            return []
+        clauses = ",".join("?" for _ in cleaned[:64])
+        sql = f"""
+        SELECT id, name, type, summary, embedding_blob
+        FROM nodes
+        WHERE LOWER(name) IN ({clauses})
+        LIMIT ?
+        """
+        params: list[object] = [*cleaned[:64], int(limit)]
+        with self._connect() as conn:
+            return list(conn.execute(sql, params).fetchall())
+
+    def fetch_node_names_for_phrase_scan(self, limit: int = 400) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT name
+                FROM nodes
+                WHERE INSTR(name, ' ') > 0
+                ORDER BY LENGTH(name) DESC
+                LIMIT ?
+                """,
+                (int(limit),),
+            ).fetchall()
+        return [str(r["name"] or "").strip() for r in rows if (r["name"] or "").strip()]
+
     def fetch_edges(self) -> list[sqlite3.Row]:
         with self._connect() as conn:
             return list(
@@ -269,6 +324,31 @@ class MemoryStore:
                     "SELECT src_id, dst_id, relation_type, weight FROM edges"
                 ).fetchall()
             )
+
+    def fetch_edges_for_node_ids(self, node_ids: Iterable[int], limit: int = 40) -> list[sqlite3.Row]:
+        ids = [int(i) for i in node_ids if int(i) > 0]
+        if not ids:
+            return []
+        placeholders = ",".join("?" for _ in ids)
+        sql = f"""
+        SELECT
+            e.src_id,
+            s.name AS src_name,
+            e.dst_id,
+            d.name AS dst_name,
+            e.relation_type,
+            e.weight
+        FROM edges e
+        JOIN nodes s ON s.id = e.src_id
+        JOIN nodes d ON d.id = e.dst_id
+        WHERE e.src_id IN ({placeholders})
+           OR e.dst_id IN ({placeholders})
+        ORDER BY e.weight DESC
+        LIMIT ?
+        """
+        params: list[object] = [*ids, *ids, int(limit)]
+        with self._connect() as conn:
+            return list(conn.execute(sql, params).fetchall())
 
     def fetch_recent_episode_snippets_for_node_names(
         self, *, session_id: str, node_names: Iterable[str], limit: int = 6

@@ -101,6 +101,8 @@ def build_secretary_prompt(
     conversation_summary: str = "",
     instruction: str | None = None,
     mode: str | None = None,
+    reasoning_block: str = "",
+    intent_label: str = "",
 ) -> str:
     """Return a single structured prompt string for the secretary LLM.
 
@@ -125,12 +127,16 @@ def build_secretary_prompt(
     clsm_block = clsm_memory.strip() or "(none)"
     summary_block = conversation_summary.strip() or "(none)"
     recent_block = recent_conversation or "(none)"
+    reasoning_section = (reasoning_block or "").strip() or "(none)"
+    intent_section = (intent_label or "").strip() or "(none)"
 
     parts = [
         "[system role: A helpful secretary that organizes and primarily sets schedules for the boss. Also, works as the boss's bantering person whenever the boss is in the mood.];",
         f"[CLS-M memory: {clsm_block}];",
         f"[Conversation summary: {summary_block}];",
         f"[Recent conversation: {recent_block}];",
+        f"[Reasoning chain: {reasoning_section}];",
+        f"[Intent policy: {intent_section}];",
         f"[User input: {cleaned_user_input.strip()}];",
         f"[Instruction: {effective_instruction}]",
     ]

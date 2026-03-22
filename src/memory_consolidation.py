@@ -15,6 +15,7 @@ class ConsolidationConfig:
     batch_size: int = 20
     max_tokens_per_episode: int = 20
     cooccurrence_relation_type: str = "co_occurs"
+    anchoring_relation_type: str = "anchored_to"
     decay_factor: float = 0.98
     min_weight: float = 0.05
 
@@ -100,6 +101,7 @@ class ConsolidationWorker:
 
                 node_ids = self._upsert_nodes(unique_tokens)
                 self._upsert_cooccurrence_edges(node_ids, now_ts)
+                self._apply_base_anchoring(unique_tokens, node_ids, now_ts)
                 processed_ids.append(ep_id)
 
             self.store.mark_episodes_consolidated(processed_ids, ts=now_ts)
@@ -160,6 +162,30 @@ class ConsolidationWorker:
                 self.store.upsert_edge(
                     src_id=dst,
                     dst_id=src,
+                    relation_type=relation,
+                    weight_delta=1.0,
+                    ts=ts,
+                )
+
+    def _apply_base_anchoring(
+        self, unique_tokens: list[str], node_ids: list[int], ts: str
+    ) -> None:
+        """Link non-base episode concepts to co-occurring base concepts (same token set)."""
+        base_ids = self.store.fetch_base_node_ids_for_token_names(unique_tokens)
+        if not base_ids:
+            return
+        types_by_id = self.store.fetch_node_types_by_ids(node_ids)
+        relation = (self.cfg.anchoring_relation_type or "anchored_to").strip().lower()
+        for nid in node_ids:
+            ntype = str(types_by_id.get(nid, "concept")).strip().lower()
+            if ntype == "base":
+                continue
+            for bid in base_ids:
+                if nid == bid:
+                    continue
+                self.store.upsert_edge(
+                    src_id=nid,
+                    dst_id=bid,
                     relation_type=relation,
                     weight_delta=1.0,
                     ts=ts,

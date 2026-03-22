@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import os
 import queue
 import threading
 from dataclasses import dataclass
 from typing import Any, Tuple
+
+_LOG = logging.getLogger("personal_assistant.gui")
 
 try:
     import customtkinter as ctk
@@ -181,14 +184,31 @@ class ChatApp(ctk.CTk):
 
         def worker() -> None:
             try:
-                # First fetch the structured prompt for debug display.
-                prompt_data = self.client.get_prompt_debug(msg)
-                prompt = str(prompt_data.get("prompt", ""))
-                self.events.put(_Event("prompt", (prompt,)))
-
-                # Then call the main chat endpoint to get the agent reply.
+                # Single chat call returns the exact prompt sent to the LLM plus reasoning_meta.
                 data = self.client.send_message(msg)
                 reply = str(data.get("reply", ""))
+                prompt = str(data.get("prompt", ""))
+                meta = data.get("reasoning_meta")
+
+                _LOG.info("---------- reasoning / prompt debug ----------")
+                if meta is not None:
+                    _LOG.info("reasoning_meta: %s", meta)
+                _LOG.info(
+                    "final_prompt (secretary / prompt_builder, LLM input):\n%s",
+                    prompt,
+                )
+                try:
+                    cache = self.client.get_reasoning_cache_debug(limit=16)
+                    _LOG.info(
+                        "topic_head_cache session=%r count=%s heads=%s",
+                        cache.get("session_id"),
+                        len(cache.get("topic_heads") or []),
+                        cache.get("topic_heads"),
+                    )
+                except Exception as cache_exc:
+                    _LOG.warning("reasoning cache debug failed: %s", cache_exc)
+                _LOG.info("---------- end reasoning / prompt debug ----------")
+
                 self.events.put(_Event("reply", (reply, None)))
             except Exception as exc:
                 self.events.put(_Event("reply", ("", exc)))
@@ -202,10 +222,6 @@ class ChatApp(ctk.CTk):
                 if ev.kind == "health":
                     (ok,) = ev.payload
                     self._set_status("Connected" if ok else "Disconnected")
-                elif ev.kind == "prompt":
-                    (prompt,) = ev.payload
-                    if prompt:
-                        print(f"\n[Prompt Debug]\n{prompt}\n")
                 elif ev.kind == "metrics":
                     data, err = ev.payload  # type: ignore[misc]
                     if err is not None:
@@ -245,8 +261,28 @@ class ChatApp(ctk.CTk):
 
 
 def run() -> None:
+    level_name = (os.getenv("GUI_LOG_LEVEL", "INFO") or "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    # Configure root once so terminal output is consistent when launched as __main__.
+    if not logging.root.handlers:
+        logging.basicConfig(
+            level=level,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        )
+    else:
+        logging.getLogger().setLevel(level)
+        _LOG.setLevel(level)
+
     base_url = os.getenv("AGENT_BASE_URL", "http://localhost:8000")
-    client = ChatClient(base_url=base_url)
+    session_id = (os.getenv("GUI_SESSION_ID", "default") or "default").strip() or "default"
+    client = ChatClient(base_url=base_url, session_id=session_id)
+    _LOG.info(
+        "Starting GUI (AGENT_BASE_URL=%r, GUI_SESSION_ID=%r). "
+        "Reasoning cache + final prompt log after each send.",
+        base_url,
+        session_id,
+    )
+
     app = ChatApp(client)
     app.mainloop()
 
