@@ -35,7 +35,7 @@ class MemoryManager:
     """
     Thin service layer over MemoryStore.
 
-    This is intentionally MVP-simple: it retrieves a compact "memory block"
+    Retrieves a compact "memory block"
     (episode snippets + any matching node summaries) and records each turn
     as an episode after the assistant replies.
 

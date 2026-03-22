@@ -37,6 +37,8 @@ class ChatApp(ctk.CTk):
         self.geometry("900x650")
         self.minsize(720, 520)
 
+        self.iconbitmap("./graphics/PAA.ico")
+
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -203,7 +205,7 @@ class ChatApp(ctk.CTk):
                 elif ev.kind == "prompt":
                     (prompt,) = ev.payload
                     if prompt:
-                        self._append_system(f"Prompt (debug):\n{prompt}")
+                        print(f"\n[Prompt Debug]\n{prompt}\n")
                 elif ev.kind == "metrics":
                     data, err = ev.payload  # type: ignore[misc]
                     if err is not None:

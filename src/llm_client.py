@@ -12,7 +12,8 @@ import httpx
 class LLMClient:
     """
     Client for the local LLM backend (Ollama in Docker).
-    Base URL is read from OLLAMA_BASE_URL (default http://ollama:11434 for Docker).
+    Base URL is read from OLLAMA_BASE_URL (default http://localhost:11434 for local runs;
+    Docker Compose sets http://ollama:11434 for container-to-container).
     """
 
     def __init__(
@@ -21,7 +22,7 @@ class LLMClient:
         model: str = "qwen3:4b",
         timeout: float = 120.0,
     ):
-        self.base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")).rstrip("/")
+        self.base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")).rstrip("/")
         self.model = model
         self.timeout = timeout
 

@@ -22,7 +22,7 @@ class ConsolidationConfig:
 class ConsolidationWorker:
     """Periodic worker that turns episodes into knowledge-graph updates.
 
-    MVP behaviour:
+    Behaviour:
     - Fetch a batch of unconsolidated episodes.
     - Extract simple keyword-style tokens from user/assistant text.
     - Upsert concept nodes for those tokens.
@@ -112,7 +112,7 @@ class ConsolidationWorker:
     def _select_tokens(self, tokens: Iterable[str]) -> list[str]:
         """Lightweight keyword/entity selection from raw tokens.
 
-        MVP heuristic:
+        Heuristic:
         - Lowercased tokens are already provided by tokenize().
         - Drop very short tokens (length < 3).
         - Keep only the first occurrence of each token.
