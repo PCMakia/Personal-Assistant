@@ -4,7 +4,7 @@ and can be replaced later by a vLLM client.
 """
 import os
 import json
-from typing import List, Dict, Any, Iterator, Optional
+from typing import List, Dict, Any, Iterator, Optional, AsyncIterator
 
 import httpx
 
@@ -106,6 +106,50 @@ class LLMClient:
             ) as response:
                 response.raise_for_status()
                 for line in response.iter_lines():
+                    if not line:
+                        continue
+                    part = json.loads(line)
+                    if part.get("error"):
+                        raise RuntimeError(part["error"])
+                    msg = (part.get("message") or {}).get("content") or ""
+                    if msg:
+                        yield msg
+                    if part.get("done"):
+                        break
+
+    async def async_stream_generate(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+        **params: Any,
+    ) -> AsyncIterator[str]:
+        """
+        Async variant of stream_generate suitable for FastAPI websocket handlers.
+        """
+        messages: List[Dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": prompt})
+
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+        }
+        if params:
+            payload["options"] = params
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/api/chat",
+                json=payload,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
                     if not line:
                         continue
                     part = json.loads(line)
