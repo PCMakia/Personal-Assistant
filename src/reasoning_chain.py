@@ -237,11 +237,23 @@ class ReasoningChainEngine:
             limit=self.cfg.max_edges,
         )
         chosen_node_ids = {int(nid) for nid in node_ids}
+        edge_node_ids: set[int] = set()
+        for e in edges_rows:
+            edge_node_ids.add(int(e["src_id"]))
+            edge_node_ids.add(int(e["dst_id"]))
+        types_by_id = self.store.fetch_node_types_by_ids(edge_node_ids)
         relations: list[EdgeView] = []
         for e in edges_rows:
             src_id = int(e["src_id"])
             dst_id = int(e["dst_id"])
-            if src_id not in chosen_node_ids or dst_id not in chosen_node_ids:
+            src_type = str(types_by_id.get(src_id, "")).strip().lower()
+            dst_type = str(types_by_id.get(dst_id, "")).strip().lower()
+            keep = src_id in chosen_node_ids and dst_id in chosen_node_ids
+            if not keep:
+                keep = (src_id in chosen_node_ids and dst_type == "base") or (
+                    dst_id in chosen_node_ids and src_type == "base"
+                )
+            if not keep:
                 continue
             relations.append(
                 EdgeView(
