@@ -100,6 +100,15 @@ class ConsolidationWorker:
                     continue
 
                 node_ids = self._upsert_nodes(unique_tokens)
+
+                # Link this episode to its selected concept nodes so retrieval can
+                # assemble evidence deterministically from `episode_entities`.
+                # Note: `episode_entities` references the `entities` table, so we
+                # mirror concept nodes into `entities(type='concept', name=token)`.
+                for tok, _node_id in zip(unique_tokens, node_ids):
+                    ent_id = self.store.upsert_entity(name=tok, type_="concept")
+                    self.store.link_episode_entity(episode_id=ep_id, entity_id=ent_id)
+
                 self._upsert_cooccurrence_edges(node_ids, now_ts)
                 self._apply_base_anchoring(unique_tokens, node_ids, now_ts)
                 processed_ids.append(ep_id)
@@ -186,6 +195,15 @@ class ConsolidationWorker:
                 self.store.upsert_edge(
                     src_id=nid,
                     dst_id=bid,
+                    relation_type=relation,
+                    weight_delta=1.0,
+                    ts=ts,
+                )
+                # Store the reverse direction too, so traversal can treat this
+                # relation as effectively undirected without extra SQL logic.
+                self.store.upsert_edge(
+                    src_id=bid,
+                    dst_id=nid,
                     relation_type=relation,
                     weight_delta=1.0,
                     ts=ts,

@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 from typing import Optional
 
 from src.memory_store import MemoryStore, tokenize
+from src.graph_memory_retriever import GraphRetriever, GraphRetrieverConfig
 
 
 def format_reasoning_block_text(
@@ -153,6 +154,10 @@ class ReasoningChainEngine:
         self.store = store or MemoryStore()
         self.cache = cache or TopicHeadCache()
         self.cfg = cfg or ReasoningConfig()
+        self.graph_retriever = GraphRetriever(
+            store=self.store,
+            cfg=GraphRetrieverConfig(),
+        )
 
     def build_chain(self, *, session_id: str, text: str) -> ReasoningChainResult:
         sid = (session_id or "default").strip() or "default"
@@ -164,15 +169,29 @@ class ReasoningChainEngine:
         phrase_terms = self._extract_phrase_terms(user_text)
 
         retrieval_terms = list(dict.fromkeys([*tokens, *phrase_terms]))
-        nodes = self.store.fetch_nodes_for_keyword_seeding(
-            retrieval_terms,
-            limit=self.cfg.max_candidate_nodes,
-        )
-        if not nodes and tokens:
+        nodes = []
+        try:
+            candidate_ids = self.graph_retriever.get_candidate_concept_ids(
+                user_text=user_text,
+                top_k=self.cfg.max_candidate_nodes,
+            )
+            if candidate_ids:
+                nodes = self.store.fetch_nodes_by_ids(candidate_ids)
+        except Exception:
+            nodes = []
+
+        # Fail-open fallback: preserve previous keyword-based SQL seeding if
+        # graph traversal doesn't yield any candidates.
+        if not nodes:
             nodes = self.store.fetch_nodes_for_keyword_seeding(
-                tokens[:8],
+                retrieval_terms,
                 limit=self.cfg.max_candidate_nodes,
             )
+            if not nodes and tokens:
+                nodes = self.store.fetch_nodes_for_keyword_seeding(
+                    tokens[:8],
+                    limit=self.cfg.max_candidate_nodes,
+                )
 
         cached_ids = {nid for nid, _ in self.cache.get_recent(session_id=sid, limit=10)}
         lower_text = user_text.lower()

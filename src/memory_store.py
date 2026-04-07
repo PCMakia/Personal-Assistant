@@ -288,6 +288,90 @@ class MemoryStore:
             rows = conn.execute(sql, id_list).fetchall()
         return {int(r["id"]): str(r["type"] or "concept") for r in rows}
 
+    def fetch_nodes_by_ids(self, ids: Iterable[int]) -> list[sqlite3.Row]:
+        """Fetch nodes rows by id, including embeddings for graph retrieval."""
+        id_list = [int(i) for i in ids if int(i) > 0]
+        if not id_list:
+            return []
+        id_list = id_list[:2000]
+        placeholders = ",".join("?" for _ in id_list)
+        sql = f"""
+        SELECT
+            id,
+            name,
+            type,
+            summary,
+            embedding_blob,
+            activation_weight
+        FROM nodes
+        WHERE id IN ({placeholders})
+        """
+        with self._connect() as conn:
+            return list(conn.execute(sql, id_list).fetchall())
+
+    def fetch_recent_episode_snippets_for_node_ids(
+        self,
+        *,
+        session_id: str,
+        node_ids: Iterable[int],
+        limit: int = 6,
+    ) -> list[str]:
+        """
+        Fetch recent episode snippets that are linked (via `episode_entities`)
+        to any of the given concept node ids.
+
+        Implementation detail:
+        - `episode_entities` references `entities` (not `nodes`).
+        - In consolidation, we mirror concept nodes into `entities(type='concept', name=<token>)`,
+          so we can join `entities` -> `nodes` on (name,type).
+        """
+        ids = [int(i) for i in node_ids if int(i) > 0]
+        if not ids:
+            return []
+        clean_limit = max(1, int(limit))
+
+        ids = ids[:500]
+        placeholders = ",".join("?" for _ in ids)
+
+        # Deduplication happens in Python because a single episode may link to
+        # multiple entities.
+        sql = f"""
+        SELECT
+            ep.id AS episode_id,
+            ep.ts,
+            ep.user_text,
+            ep.assistant_text
+        FROM episodes ep
+        JOIN episode_entities ee ON ee.episode_id = ep.id
+        JOIN entities ent ON ent.id = ee.entity_id
+        JOIN nodes n
+          ON LOWER(n.name) = LOWER(ent.name)
+         AND LOWER(n.type) = LOWER(ent.type)
+        WHERE ep.session_id = ?
+          AND n.id IN ({placeholders})
+        ORDER BY ep.ts DESC
+        LIMIT ?
+        """
+
+        params: list[object] = [session_id, *ids, int(clean_limit) * 5]
+        with self._connect() as conn:
+            rows = list(conn.execute(sql, params).fetchall())
+
+        out: list[str] = []
+        seen_episode_ids: set[int] = set()
+        for r in rows:
+            epid = int(r["episode_id"])
+            if epid in seen_episode_ids:
+                continue
+            seen_episode_ids.add(epid)
+
+            u = (r["user_text"] or "").strip().replace("\n", " ")
+            a = (r["assistant_text"] or "").strip().replace("\n", " ")
+            out.append(f"{r['ts']}: User: {u[:180]} | Assistant: {a[:180]}")
+            if len(out) >= clean_limit:
+                break
+        return out
+
     def fetch_nodes_by_exact_names(self, names: Iterable[str], limit: int = 64) -> list[sqlite3.Row]:
         cleaned = [n.strip().lower() for n in names if n and n.strip()]
         if not cleaned:

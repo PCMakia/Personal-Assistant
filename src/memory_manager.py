@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import os
 from typing import Any, Iterable, Optional
 
 from collections import deque
 
 from src.memory_store import MemoryStore, tokenize
+from src.graph_memory_retriever import GraphRetriever, GraphRetrieverConfig
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,22 @@ class MemoryManager:
 
     def __init__(self, store: Optional[MemoryStore] = None):
         self.store = store or MemoryStore()
+        # Graph-memory retriever (fail-open: retrieval may fall back to the
+        # previous keyword-based strategy if anything goes wrong).
+        #
+        # Toggle:
+        # - set `MEMORY_USE_GRAPH_RETRIEVER=0` to force legacy keyword-based memory.
+        self.use_graph_retriever = str(os.getenv("MEMORY_USE_GRAPH_RETRIEVER", "1")).strip().lower() not in (
+            "0",
+            "false",
+            "no",
+            "off",
+        )
+        self.graph_retriever = (
+            GraphRetriever(store=self.store, cfg=GraphRetrieverConfig())
+            if self.use_graph_retriever
+            else None
+        )
         # Most recent context-efficiency samples (fail-open if anything goes wrong).
         self._metrics_buffer: deque[MemoryMetricsSample] = deque(maxlen=64)
 
@@ -52,8 +70,22 @@ class MemoryManager:
         session_id = (session_id or "default").strip() or "default"
         user_text = (user_text or "").strip()
 
+        if self.graph_retriever is not None:
+            try:
+                result = self.graph_retriever.retrieve_context(
+                    session_id=session_id,
+                    user_text=user_text,
+                    episode_evidence_limit=limit,
+                )
+                if result.block:
+                    return MemoryRetrieveResult(block=result.block, snippets=result.snippets)
+            except Exception:
+                # Fall back to the previous keyword-based retrieval to keep the
+                # app resilient against any graph-memory regressions.
+                pass
+
+        # Legacy keyword-based retrieval fallback.
         tokens = tokenize(user_text)
-        # Prefer known semantic nodes (if any exist), otherwise fall back to query tokens.
         nodes = self.store.fetch_nodes_for_keyword_seeding(tokens, limit=12)
         node_names = [str(r["name"]) for r in nodes if (r.get("name") if hasattr(r, "get") else r["name"])]
         if not node_names:
