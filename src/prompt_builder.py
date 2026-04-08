@@ -1,8 +1,8 @@
 """Build structured secretary prompts for the personal assistant LLM."""
 
-from datetime import datetime
 from typing import Iterable, Mapping
-from zoneinfo import ZoneInfo
+
+from src.time_utils import get_tz
 
 _INSTRUCTION_BASE = (
     "You are a personal assistant (a helpful secretary). Your mission is to help the user plan, decide, write, and execute tasks.\n"
@@ -52,7 +52,9 @@ DEFAULT_INSTRUCTION = _INSTRUCTION_WORKING
 
 def get_computer_time_context() -> str:
     """Return current US Eastern time for prompt context (``America/New_York``: EST or EDT)."""
-    now = datetime.now(ZoneInfo("America/New_York"))
+    from datetime import datetime
+
+    now = datetime.now(get_tz())
     abbr = now.tzname() or "ET"
     return f"now={now.isoformat(timespec='seconds')} ({abbr}, Eastern)"
 

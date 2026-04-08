@@ -5,13 +5,16 @@ import os
 import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 
+from src.time_utils import now_iso
+
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Kept for backward compatibility with existing callers, but uses the
+    # configured app timezone (EST-default) per project plan.
+    return now_iso()
 
 
 def _safe_json(obj: object) -> str:
@@ -106,6 +109,22 @@ CREATE TABLE IF NOT EXISTS edges (
 
 CREATE INDEX IF NOT EXISTS idx_edges_src
   ON edges(src_id);
+
+CREATE TABLE IF NOT EXISTS unresolved (
+  task_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  instruction TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  tags_json TEXT NOT NULL,
+  event_start_ts TEXT NOT NULL,
+  reminder_fire_at_ts TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_ts TEXT NOT NULL,
+  updated_ts TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_unresolved_status_fire
+  ON unresolved(status, reminder_fire_at_ts);
 """
 
 
@@ -231,6 +250,90 @@ class MemoryStore:
                 """,
                 (int(src_id), int(dst_id), relation_type, float(weight_delta), ts),
             )
+
+    # --- Unresolved task persistence -------------------------------------------
+
+    def upsert_unresolved(
+        self,
+        *,
+        task_id: str,
+        session_id: str,
+        instruction: str,
+        payload_json: str,
+        tags_json: str,
+        event_start_ts: str,
+        reminder_fire_at_ts: str,
+        status: str = "active",
+        ts: str | None = None,
+    ) -> None:
+        now_ts = ts or _utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO unresolved(
+                  task_id, session_id, instruction, payload_json, tags_json,
+                  event_start_ts, reminder_fire_at_ts, status, created_ts, updated_ts
+                )
+                VALUES(?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(task_id) DO UPDATE SET
+                  session_id=excluded.session_id,
+                  instruction=excluded.instruction,
+                  payload_json=excluded.payload_json,
+                  tags_json=excluded.tags_json,
+                  event_start_ts=excluded.event_start_ts,
+                  reminder_fire_at_ts=excluded.reminder_fire_at_ts,
+                  status=excluded.status,
+                  updated_ts=excluded.updated_ts
+                """,
+                (
+                    str(task_id),
+                    str(session_id),
+                    str(instruction),
+                    str(payload_json),
+                    str(tags_json),
+                    str(event_start_ts),
+                    str(reminder_fire_at_ts),
+                    str(status),
+                    now_ts,
+                    now_ts,
+                ),
+            )
+
+    def list_unresolved_active(self, *, limit: int = 500) -> list[sqlite3.Row]:
+        with self._connect() as conn:
+            return list(
+                conn.execute(
+                    """
+                    SELECT task_id, session_id, instruction, payload_json, tags_json,
+                           event_start_ts, reminder_fire_at_ts, status, created_ts, updated_ts
+                    FROM unresolved
+                    WHERE status='active'
+                    ORDER BY reminder_fire_at_ts ASC
+                    LIMIT ?
+                    """,
+                    (int(limit),),
+                ).fetchall()
+            )
+
+    def mark_unresolved_status(self, *, task_ids: Iterable[str], status: str, ts: str | None = None) -> None:
+        ids = [str(t) for t in task_ids if t]
+        if not ids:
+            return
+        now_ts = ts or _utc_now_iso()
+        placeholders = ",".join(["?"] * len(ids))
+        with self._connect() as conn:
+            conn.execute(
+                f"UPDATE unresolved SET status=?, updated_ts=? WHERE task_id IN ({placeholders})",
+                (str(status), now_ts, *ids),
+            )
+
+    def delete_unresolved(self, *, task_ids: Iterable[str]) -> None:
+        ids = [str(t) for t in task_ids if t]
+        if not ids:
+            return
+        placeholders = ",".join(["?"] * len(ids))
+        with self._connect() as conn:
+            conn.execute(f"DELETE FROM unresolved WHERE task_id IN ({placeholders})", ids)
 
     def fetch_nodes_for_keyword_seeding(self, tokens: Iterable[str], limit: int = 30) -> list[sqlite3.Row]:
         toks = [t.strip().lower() for t in tokens if t and t.strip()]

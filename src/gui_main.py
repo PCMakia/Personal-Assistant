@@ -103,6 +103,9 @@ class ChatApp(ctk.CTk):
         self._append_system(
             "GUI started. Make sure the backend is running (e.g. `docker-compose up -d`)."
         )
+        self._append_system(
+            "Tip: use '/schedule <your task>' to run explicit scheduling debug path."
+        )
 
     def clear_chat(self) -> None:
         self.chat_text.configure(state="normal")
@@ -184,6 +187,25 @@ class ChatApp(ctk.CTk):
 
         def worker() -> None:
             try:
+                schedule_prefix = "/schedule "
+                if msg.lower().startswith(schedule_prefix):
+                    schedule_text = msg[len(schedule_prefix):].strip()
+                    if not schedule_text:
+                        raise RuntimeError("Schedule command is empty. Use /schedule <task details>.")
+                    _LOG.info("[schedule-debug] sending /agent/schedule request: %r", schedule_text)
+                    data = self.client.schedule_task(schedule_text)
+                    _LOG.info("[schedule-debug] /agent/schedule response: %s", data)
+                    note = str(data.get("note", ""))
+                    ok = bool(data.get("ok", False))
+                    task_id = data.get("task_id")
+                    entry_id = data.get("outlook_entry_id")
+                    debug_reply = (
+                        f"[schedule-debug] ok={ok}, task_id={task_id}, "
+                        f"outlook_entry_id={entry_id}\n{note}"
+                    )
+                    self.events.put(_Event("reply", (debug_reply, None)))
+                    return
+
                 # Single chat call returns the exact prompt sent to the LLM plus reasoning_meta.
                 data = self.client.send_message(msg)
                 reply = str(data.get("reply", ""))
@@ -273,7 +295,13 @@ def run() -> None:
         logging.getLogger().setLevel(level)
         _LOG.setLevel(level)
 
-    base_url = os.getenv("AGENT_BASE_URL", "http://localhost:8000")
+    # Prefer IPv4 loopback by default; some Docker Desktop/WSL setups reset IPv6 ::1 connections.
+    base_url = os.getenv("AGENT_BASE_URL", "http://127.0.0.1:8000")
+    # If user configured localhost explicitly, normalize to IPv4 loopback to avoid ::1 issues.
+    if base_url.strip().startswith("http://localhost"):
+        base_url = base_url.replace("http://localhost", "http://127.0.0.1", 1)
+    if base_url.strip().startswith("https://localhost"):
+        base_url = base_url.replace("https://localhost", "https://127.0.0.1", 1)
     session_id = (os.getenv("GUI_SESSION_ID", "default") or "default").strip() or "default"
     client = ChatClient(base_url=base_url, session_id=session_id)
     _LOG.info(

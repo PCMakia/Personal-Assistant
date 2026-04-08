@@ -8,7 +8,8 @@ import httpx
 
 @dataclass(frozen=True)
 class ChatClient:
-    base_url: str = "http://localhost:8000"
+    # Use IPv4 loopback by default; some Docker Desktop/WSL setups reset IPv6 ::1 connections.
+    base_url: str = "http://127.0.0.1:8000"
     timeout: float = 120.0
     # Must match backend `session_id` for reasoning cache and CLS-M scoping.
     session_id: str = "default"
@@ -36,6 +37,18 @@ class ChatClient:
 
         if not isinstance(data, dict) or "reply" not in data:
             raise RuntimeError(f"Unexpected response from server: {data!r}")
+        return data
+
+    def schedule_task(self, message: str) -> Dict[str, Any]:
+        with httpx.Client(timeout=self.timeout) as client:
+            resp = client.post(
+                self._url("/agent/schedule"),
+                json={"message": message, "session_id": self.session_id},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        if not isinstance(data, dict) or "note" not in data:
+            raise RuntimeError(f"Unexpected schedule response from server: {data!r}")
         return data
 
     def get_prompt_debug(self, message: str) -> Dict[str, Any]:
