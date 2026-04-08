@@ -1,6 +1,8 @@
 """Build structured secretary prompts for the personal assistant LLM."""
 
+from datetime import datetime
 from typing import Iterable, Mapping
+from zoneinfo import ZoneInfo
 
 _INSTRUCTION_BASE = (
     "You are a personal assistant (a helpful secretary). Your mission is to help the user plan, decide, write, and execute tasks.\n"
@@ -46,6 +48,13 @@ _INSTRUCTION_BANTERING = (
 
 # Default behavior if no explicit mode is provided.
 DEFAULT_INSTRUCTION = _INSTRUCTION_WORKING
+
+
+def get_computer_time_context() -> str:
+    """Return current US Eastern time for prompt context (``America/New_York``: EST or EDT)."""
+    now = datetime.now(ZoneInfo("America/New_York"))
+    abbr = now.tzname() or "ET"
+    return f"now={now.isoformat(timespec='seconds')} ({abbr}, Eastern)"
 
 
 def _extract_mode_command(user_input: str) -> tuple[str | None, str]:
@@ -129,9 +138,11 @@ def build_secretary_prompt(
     recent_block = recent_conversation or "(none)"
     reasoning_section = (reasoning_block or "").strip() or "(none)"
     intent_section = (intent_label or "").strip() or "(none)"
+    computer_time_section = get_computer_time_context()
 
     parts = [
         "[system role: A helpful secretary that organizes and primarily sets schedules for the boss. Also, works as the boss's bantering person whenever the boss is in the mood.];",
+        f"[Computer time: {computer_time_section}];",
         f"[CLS-M memory: {clsm_block}];",
         f"[Conversation summary: {summary_block}];",
         f"[Recent conversation: {recent_block}];",
