@@ -1,11 +1,15 @@
 """
-Internet search, scrape, and abstractive summarization.
+Internet search, scrape, and summarization.
 
-Uses Playwright for browser automation, BeautifulSoup4 for content extraction,
-and the project's LLM (Ollama) for abstractive summarization.
+Uses httpx + DuckDuckGo Lite for search URLs, Playwright to load pages,
+BeautifulSoup4 for content extraction.
 
-Flow: query -> search (DuckDuckGo HTML) -> top N URLs -> scrape each page
-      -> extract main content (BeautifulSoup) -> LLM abstractive summary.
+Summarization modes:
+- ``summarize_scrape_extractive`` — extractive bullets (Qwen3-Embed when available,
+  else simple sentence trim); no extra LLM call.
+- ``search_and_summarize`` — abstractive summary via the project LLM (Ollama).
+
+Flow: query -> search -> top N URLs -> scrape -> combine text -> summarize.
 """
 from __future__ import annotations
 
@@ -166,6 +170,92 @@ def _scrape_page_playwright(url: str) -> str:
     return text.strip()
 
 
+def fetch_scraped_corpus(
+    query: str,
+    *,
+    top_n: int = 5,
+    max_chars_per_page: int | None = None,
+) -> str:
+    """Search and scrape pages; return combined raw text (no LLM).
+
+    Used for extractive summarization and memory node enrichment.
+    """
+    cap = max_chars_per_page if max_chars_per_page is not None else MAX_CHARS_PER_PAGE
+    try:
+        urls = _search_urls_playwright(query, top_n=top_n)
+    except Exception:
+        return ""
+
+    if not urls:
+        return ""
+
+    contents: list[str] = []
+    for i, url in enumerate(urls):
+        try:
+            text = _scrape_page_playwright(url)
+            if text:
+                if len(text) > cap:
+                    text = text[:cap] + "..."
+                contents.append(f"[Source {i + 1}: {url}]\n{text}")
+        except Exception:
+            continue
+
+    if not contents:
+        return ""
+    return "\n\n---\n\n".join(contents)
+
+
+def _simple_extractive_fallback(corpus: str, *, max_sentences: int = 4, max_chars: int = 900) -> str:
+    """Lightweight extractive summary when embedding-based extractive is unavailable."""
+    if not corpus.strip():
+        return ""
+    parts = re.split(r"(?<=[.!?])\s+", corpus)
+    sents = [p.strip() for p in parts if len(p.strip()) > 20]
+    if not sents:
+        sents = [corpus.strip()[:max_chars]]
+    out = " ".join(sents[:max_sentences]).strip()
+    return out[:max_chars]
+
+
+def summarize_scrape_extractive(
+    corpus: str,
+    *,
+    max_bullets: int = 4,
+    max_words_per_bullet: int = 22,
+) -> str:
+    """Turn scraped corpus into a short extractive-style gloss (bullets or sentences)."""
+    corpus = (corpus or "").strip()
+    if not corpus:
+        return ""
+    try:
+        from src.summarizer import bullet_summary
+
+        out = bullet_summary(
+            corpus,
+            max_bullets=max_bullets,
+            mode="extractive",
+            max_words_per_bullet=max_words_per_bullet,
+            ratio=0.25,
+        )
+        if (out or "").strip():
+            return out.strip()
+    except Exception:
+        pass
+    return _simple_extractive_fallback(corpus)
+
+
+def web_gloss_for_topic(topic: str, *, top_n: int = 3, max_bullets: int = 4) -> str:
+    """Search the web for ``topic`` and return a short extractive gloss."""
+    q = (topic or "").strip()
+    if not q:
+        return ""
+    search_q = f"{q} what is definition overview"
+    corpus = fetch_scraped_corpus(search_q, top_n=top_n)
+    if not corpus:
+        return ""
+    return summarize_scrape_extractive(corpus, max_bullets=max_bullets)
+
+
 def _abstractive_summary(
     query: str,
     combined_content: str,
@@ -212,26 +302,12 @@ def search_and_summarize(
     llm = llm or LLMClient()
 
     try:
-        urls = _search_urls_playwright(query, top_n=top_n)
+        combined = fetch_scraped_corpus(query, top_n=top_n)
     except Exception as e:
         return f"Search failed: {e}"
 
-    if not urls:
-        return "No search results found."
-
-    contents: list[str] = []
-    for i, url in enumerate(urls):
-        try:
-            text = _scrape_page_playwright(url)
-            if text:
-                contents.append(f"[Source {i + 1}: {url}]\n{text}")
-        except Exception:
-            continue
-
-    if not contents:
-        return "Could not extract content from any of the search results."
-
-    combined = "\n\n---\n\n".join(contents)
+    if not combined:
+        return "No search results found or could not extract content from search results."
 
     try:
         return _abstractive_summary(query, combined, llm)

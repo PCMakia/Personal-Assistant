@@ -227,6 +227,44 @@ class MemoryStore:
                 raise RuntimeError("Failed to upsert node")
             return int(row["id"])
 
+    def try_enrich_node_summary_web(
+        self,
+        *,
+        node_id: int,
+        new_summary: str,
+        overwrite_seeded: bool = False,
+        max_summary_len: int = 4000,
+    ) -> bool:
+        """Write ``[web] …`` summary when the node has no summary or a seeded placeholder.
+
+        Does not overwrite hand-written summaries unless ``overwrite_seeded`` and the
+        current text looks like episode/doc seeding.
+        """
+        new_summary = (new_summary or "").strip()
+        if not new_summary:
+            return False
+        payload = f"[web] {new_summary}"[: int(max_summary_len)]
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT summary FROM nodes WHERE id = ?",
+                (int(node_id),),
+            ).fetchone()
+            if row is None:
+                return False
+            cur = (row["summary"] or "").strip()
+            eligible = not cur
+            if not eligible and overwrite_seeded:
+                low = cur.lower()
+                if low.startswith("seeded from") or low.startswith("(seeded"):
+                    eligible = True
+            if not eligible:
+                return False
+            conn.execute(
+                "UPDATE nodes SET summary = ? WHERE id = ?",
+                (payload, int(node_id)),
+            )
+        return True
+
     def upsert_edge(
         self,
         *,

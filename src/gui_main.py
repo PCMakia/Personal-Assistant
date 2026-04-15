@@ -271,7 +271,9 @@ class ChatApp(ctk.CTk):
                         self._set_status("Connected")
                     else:
                         self._append_agent(f"Error: {err}")
-                        self._set_status("Disconnected")
+                        # Chat failure does not mean the API is down; re-check health for accurate status.
+                        self._set_status("Chat error")
+                        self.after(50, self.refresh_health)
 
                     self._pending_request = False
                     self._set_input_enabled(True)

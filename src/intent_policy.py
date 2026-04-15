@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
@@ -61,6 +62,21 @@ _IMPERATIVE_VERBS = frozenset(
     }
 )
 
+_DEFINITION_Q_RE = re.compile(r"\b(what|who|which)\b", re.IGNORECASE)
+
+
+def is_narrow_definition_question(user_text: str) -> bool:
+    """True when the message looks like a definitional question (JIT web gate).
+
+    Requires a question mark and a *what*, *who*, or *which* cue to reduce false
+    web lookups on casual chat.
+    """
+    t = (user_text or "").strip()
+    if "?" not in t:
+        return False
+    return bool(_DEFINITION_Q_RE.search(t))
+
+
 _INTERROGATIVE_PREFIXES = (
     "what ",
     "when ",
@@ -106,6 +122,9 @@ def classify_intent(
 
     if text.startswith("/"):
         return {"intent": "command", "source": "slash"}
+
+    if is_narrow_definition_question(text):
+        return {"intent": "question", "source": "definition_question"}
 
     if "?" in text:
         return {"intent": "question", "source": "question_mark"}

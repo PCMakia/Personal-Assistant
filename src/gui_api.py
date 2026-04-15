@@ -6,6 +6,28 @@ from typing import Any, Dict
 import httpx
 
 
+def _fastapi_error_detail(response: httpx.Response) -> str:
+    """Extract ``detail`` from a FastAPI/Starlette JSON error body."""
+    try:
+        data = response.json()
+    except Exception:
+        return (response.text or "").strip()[:800]
+    detail = data.get("detail")
+    if isinstance(detail, str):
+        return detail
+    if isinstance(detail, list):
+        parts: list[str] = []
+        for item in detail:
+            if isinstance(item, dict) and "msg" in item:
+                parts.append(str(item["msg"]))
+            else:
+                parts.append(str(item))
+        return "; ".join(parts) if parts else str(data)[:800]
+    if detail is not None:
+        return str(detail)
+    return str(data)[:800]
+
+
 @dataclass(frozen=True)
 class ChatClient:
     # Use IPv4 loopback by default; some Docker Desktop/WSL setups reset IPv6 ::1 connections.
@@ -32,7 +54,13 @@ class ChatClient:
                 self._url("/agent/chat"),
                 json={"message": message, "session_id": self.session_id},
             )
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                msg = _fastapi_error_detail(exc.response)
+                raise RuntimeError(
+                    msg or f"Server error {exc.response.status_code} for {exc.request.url}"
+                ) from exc
             data = resp.json()
 
         if not isinstance(data, dict) or "reply" not in data:

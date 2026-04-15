@@ -9,6 +9,13 @@ from typing import List, Dict, Any, Iterator, Optional, AsyncIterator
 import httpx
 
 
+def _ollama_think_compat_fields(model_name: str) -> Dict[str, Any]:
+    """Qwen3 chat models may fill ``thinking`` and leave ``content`` empty unless think is off."""
+    if (model_name or "").lower().lstrip().startswith("qwen3"):
+        return {"think": False}
+    return {}
+
+
 class LLMClient:
     """
     Client for the local LLM backend (Ollama in Docker).
@@ -19,11 +26,13 @@ class LLMClient:
     def __init__(
         self,
         base_url: Optional[str] = None,
-        model: str = "qwen3:4b",
+        model: Optional[str] = None,
         timeout: float = 120.0,
     ):
         self.base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")).rstrip("/")
-        self.model = model
+        # Explicit ``model`` wins; else OLLAMA_MODEL (e.g. Docker Compose); else default.
+        self.model = (model or os.getenv("OLLAMA_MODEL") or "qwen3:4b").strip()
+        self.vision_model = os.getenv("OLLAMA_VISION_MODEL", "llava:7b")
         self.timeout = timeout
 
     def generate(
@@ -49,16 +58,33 @@ class LLMClient:
             "model": self.model,
             "messages": messages,
             "stream": False,
+            **_ollama_think_compat_fields(self.model),
         }
         if params:
             payload["options"] = params
 
         with httpx.Client(timeout=self.timeout) as client:
-            resp = client.post(
-                f"{self.base_url}/api/chat",
-                json=payload,
-            )
-            resp.raise_for_status()
+            try:
+                resp = client.post(
+                    f"{self.base_url}/api/chat",
+                    json=payload,
+                )
+                resp.raise_for_status()
+            except httpx.ConnectError as exc:
+                raise RuntimeError(
+                    f"Cannot reach Ollama at {self.base_url} ({exc}). "
+                    "Start the Ollama service and check OLLAMA_BASE_URL."
+                ) from exc
+            except httpx.TimeoutException as exc:
+                raise RuntimeError(
+                    f"Ollama request timed out after {self.timeout}s (model={self.model!r})."
+                ) from exc
+            except httpx.HTTPStatusError as exc:
+                body = (exc.response.text or "")[:800]
+                raise RuntimeError(
+                    f"Ollama HTTP {exc.response.status_code} for model {self.model!r}. "
+                    f"Pull the model (`ollama pull {self.model}`) or fix OLLAMA_MODEL. Body: {body}"
+                ) from exc
             data = resp.json()
 
         content = (data.get("message") or {}).get("content") or ""
@@ -94,6 +120,7 @@ class LLMClient:
             "model": self.model,
             "messages": messages,
             "stream": True,
+            **_ollama_think_compat_fields(self.model),
         }
         if params:
             payload["options"] = params
@@ -104,7 +131,13 @@ class LLMClient:
                 f"{self.base_url}/api/chat",
                 json=payload,
             ) as response:
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    body = (exc.response.read() or b"")[:800].decode("utf-8", errors="replace")
+                    raise RuntimeError(
+                        f"Ollama HTTP {exc.response.status_code} for model {self.model!r}. {body}"
+                    ) from exc
                 for line in response.iter_lines():
                     if not line:
                         continue
@@ -138,6 +171,7 @@ class LLMClient:
             "model": self.model,
             "messages": messages,
             "stream": True,
+            **_ollama_think_compat_fields(self.model),
         }
         if params:
             payload["options"] = params
@@ -148,7 +182,13 @@ class LLMClient:
                 f"{self.base_url}/api/chat",
                 json=payload,
             ) as response:
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    body = (await exc.response.aread() or b"")[:800].decode("utf-8", errors="replace")
+                    raise RuntimeError(
+                        f"Ollama HTTP {exc.response.status_code} for model {self.model!r}. {body}"
+                    ) from exc
                 async for line in response.aiter_lines():
                     if not line:
                         continue
@@ -160,3 +200,130 @@ class LLMClient:
                         yield msg
                     if part.get("done"):
                         break
+
+    def generate_with_images(
+        self,
+        prompt: str,
+        image_base64_list: List[str],
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+        **params: Any,
+    ) -> Dict[str, Any]:
+        """
+        Send a multimodal chat request (text + base64 images) to Ollama and return one response.
+        """
+        content_parts: List[Dict[str, str]] = [{"type": "text", "text": prompt}]
+        for image_b64 in image_base64_list:
+            if image_b64:
+                content_parts.append({"type": "image", "image": image_b64})
+
+        messages: List[Dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": content_parts})
+
+        use_model = model or self.vision_model
+        payload: Dict[str, Any] = {
+            "model": use_model,
+            "messages": messages,
+            "stream": False,
+            **_ollama_think_compat_fields(use_model),
+        }
+        if params:
+            payload["options"] = params
+
+        with httpx.Client(timeout=self.timeout) as client:
+            try:
+                resp = client.post(
+                    f"{self.base_url}/api/chat",
+                    json=payload,
+                )
+                resp.raise_for_status()
+            except httpx.ConnectError as exc:
+                raise RuntimeError(
+                    f"Cannot reach Ollama at {self.base_url} ({exc})."
+                ) from exc
+            except httpx.HTTPStatusError as exc:
+                body = (exc.response.text or "")[:800]
+                raise RuntimeError(
+                    f"Ollama HTTP {exc.response.status_code} for model {use_model!r}. {body}"
+                ) from exc
+            data = resp.json()
+
+        content = (data.get("message") or {}).get("content") or ""
+        eval_count = data.get("eval_count", 0)
+        prompt_eval_count = data.get("prompt_eval_count", 0)
+
+        return {
+            "completion": content,
+            "usage": {
+                "prompt_tokens": prompt_eval_count,
+                "completion_tokens": eval_count,
+            },
+        }
+
+    async def async_generate_with_images(
+        self,
+        prompt: str,
+        image_base64_list: List[str],
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+        **params: Any,
+    ) -> Dict[str, Any]:
+        """
+        Async multimodal variant for streamer mode.
+        """
+        content_parts: List[Dict[str, str]] = [{"type": "text", "text": prompt}]
+        for image_b64 in image_base64_list:
+            if image_b64:
+                content_parts.append({"type": "image", "image": image_b64})
+
+        messages: List[Dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": content_parts})
+
+        use_model = model or self.vision_model
+        payload: Dict[str, Any] = {
+            "model": use_model,
+            "messages": messages,
+            "stream": False,
+            **_ollama_think_compat_fields(use_model),
+        }
+        if params:
+            payload["options"] = params
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            try:
+                resp = await client.post(
+                    f"{self.base_url}/api/chat",
+                    json=payload,
+                )
+                resp.raise_for_status()
+            except httpx.ConnectError as exc:
+                raise RuntimeError(
+                    f"Cannot reach Ollama at {self.base_url} ({exc})."
+                ) from exc
+            except httpx.HTTPStatusError as exc:
+                body = (exc.response.text or "")[:800]
+                raise RuntimeError(
+                    f"Ollama HTTP {exc.response.status_code} for model {use_model!r}. {body}"
+                ) from exc
+            data = resp.json()
+
+        content = (data.get("message") or {}).get("content") or ""
+        eval_count = data.get("eval_count", 0)
+        prompt_eval_count = data.get("prompt_eval_count", 0)
+        return {
+            "completion": content,
+            "usage": {
+                "prompt_tokens": prompt_eval_count,
+                "completion_tokens": eval_count,
+            },
+        }
