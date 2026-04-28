@@ -16,7 +16,11 @@ def format_reasoning_block_text(
     max_relation_lines: int = 12,
     max_evidence_lines: int = 6,
 ) -> str:
-    """Compact, deterministic text for LLM prompt injection (no LLM calls)."""
+    """Compact, deterministic text for LLM prompt injection (no LLM calls).
+
+    Presents the thought as an explicit head-to-tail linked sequence (system-built);
+    the model is instructed to verbalize this chain only, not to extend it.
+    """
     if error:
         return f"(reasoning unavailable: {error})"
     if result is None or not result.steps:
@@ -24,7 +28,22 @@ def format_reasoning_block_text(
 
     lines: list[str] = []
     cap = max(1, int(max_step_lines))
-    for s in result.steps[:cap]:
+    steps_slice = result.steps[:cap]
+    # Singly-linked view: ordered nodes the runtime already ranked for this turn.
+    chain_labels: list[str] = []
+    for s in steps_slice:
+        label = (s.name or "").strip() or "(unnamed)"
+        chain_labels.append(f"[{s.step_type}] {label}")
+    chain_line = " -> ".join(chain_labels)
+    if len(result.steps) > cap:
+        chain_line += f" -> ... ({len(result.steps) - cap} more)"
+    lines.append(f"LINKED_CHAIN head-to-tail (system order; translate, do not reorder for new logic): {chain_line}")
+
+    if result.tokens:
+        tok_cap = min(24, len(result.tokens))
+        lines.append(f"QUERY_TOKENS (retrieval hooks): {' '.join(result.tokens[:tok_cap])}")
+
+    for s in steps_slice:
         lines.append(
             f"- [{s.step_type}] {s.name} | type={s.concept_type} | score={s.score:.2f} | {s.summary[:120]}"
         )
@@ -32,7 +51,7 @@ def format_reasoning_block_text(
         lines.append(f"... ({len(result.steps) - cap} more steps omitted)")
 
     if result.relations:
-        lines.append("Relations:")
+        lines.append("GRAPH_LINKS (edges among concepts; optional nuance when wording connectivity):")
         rcap = max(1, int(max_relation_lines))
         for r in result.relations[:rcap]:
             lines.append(

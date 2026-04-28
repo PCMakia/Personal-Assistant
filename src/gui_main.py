@@ -243,7 +243,12 @@ class ChatApp(ctk.CTk):
                 ev = self.events.get_nowait()
                 if ev.kind == "health":
                     (ok,) = ev.payload
-                    self._set_status("Connected" if ok else "Disconnected")
+                    if ok:
+                        self._set_status("Connected")
+                    else:
+                        self._set_status(
+                            f"Disconnected (no /agent/health from {self.client.base_url})"
+                        )
                 elif ev.kind == "metrics":
                     data, err = ev.payload  # type: ignore[misc]
                     if err is not None:

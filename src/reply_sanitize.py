@@ -22,11 +22,14 @@ _MARK_START = re.compile(
     r"\[Concept\]"  # paraphrase of reasoning step format
     r"|\[Intent policy:"
     r"|\[Web knowledge"
-    r"|\[Reasoning chain:"
+    r"|\[Reasoning chain"
     r"|\[CLS-M memory:"
     r"|\[User input:"
     r"|\[Instruction:"
-    r"|-\s*\[(?:concept|relation|evidence)\]"  # format_reasoning_block_text bullets
+    r"|-\s*\[(?:concept|relation|evidence|command)\]"  # format_reasoning_block_text bullets
+    r"|LINKED_CHAIN\b"
+    r"|QUERY_TOKENS\b"
+    r"|GRAPH_LINKS\b"
     r")",
 )
 

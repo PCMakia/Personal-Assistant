@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict
 
 import httpx
+
+_LOG = logging.getLogger("personal_assistant.gui_api")
 
 
 def _fastapi_error_detail(response: httpx.Response) -> str:
@@ -40,12 +43,14 @@ class ChatClient:
         return f"{self.base_url.rstrip('/')}{path}"
 
     def check_health(self) -> bool:
+        url = self._url("/agent/health")
         try:
             with httpx.Client(timeout=10.0) as client:
-                resp = client.get(self._url("/agent/health"))
+                resp = client.get(url)
                 resp.raise_for_status()
             return True
-        except Exception:
+        except Exception as exc:
+            _LOG.warning("Health check failed for %s: %s", url, exc)
             return False
 
     def send_message(self, message: str) -> Dict[str, Any]:
