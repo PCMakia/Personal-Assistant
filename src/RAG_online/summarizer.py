@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Literal, Optional
 
-from src.llm_client import LLMClient
+from src.LLM_handler.llm_client import LLMClient
 
 # Rough token estimate: ~4 chars per token for English
 CHARS_PER_TOKEN = 4

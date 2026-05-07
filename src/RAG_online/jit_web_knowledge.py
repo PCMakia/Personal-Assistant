@@ -20,10 +20,10 @@ import os
 import re
 import logging
 
-from src.graph_memory_retriever import GraphRetriever
-from src.intent_policy import is_narrow_definition_question
-from src.memory_store import MemoryStore
-from src.reasoning_chain import ReasoningChainResult
+from src.memory_manager.retrieval.graph_memory_retriever import GraphRetriever
+from src.LLM_handler.intent_policy import is_narrow_definition_question
+from src.memory_manager.storage.memory_store import MemoryStore
+from src.memory_manager.retrieval.reasoning_chain import ReasoningChainResult
 
 _LOG = logging.getLogger("personal_assistant.jit_web")
 
@@ -125,7 +125,7 @@ def _collect_phrase_candidates(user_text: str, *, strict: bool, pool_limit: int 
     for m in re.finditer(r"\b(?:[A-Z][a-z]+\s+){1,5}[A-Z][a-z]+\b", text):
         add(m.group(0))
 
-    from src.memory_store import tokenize
+    from src.memory_manager.storage.memory_store import tokenize
 
     for t in tokenize(text):
         if len(t) < 4 or t in _STOPWORDS:
@@ -180,7 +180,7 @@ def build_jit_web_knowledge_block(
     if strict and not is_narrow_definition_question(user_text):
         return ""
 
-    from src.internet_access import web_gloss_for_topic
+    from src.RAG_online.internet_access import web_gloss_for_topic
 
     max_l = _max_lookups()
     if max_l == 0:

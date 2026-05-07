@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from bs4 import BeautifulSoup
 
-from src.llm_client import LLMClient
+from src.LLM_handler.llm_client import LLMClient
 
 # Search and scrape limits
 TOP_N_URLS = 15
@@ -228,7 +228,7 @@ def summarize_scrape_extractive(
     if not corpus:
         return ""
     try:
-        from src.summarizer import bullet_summary
+        from src.RAG_online.summarizer import bullet_summary
 
         out = bullet_summary(
             corpus,

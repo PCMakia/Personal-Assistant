@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from src.memory_store import MemoryStore, tokenize, _utc_now_iso
+from src.memory_manager.storage.memory_store import MemoryStore, tokenize, _utc_now_iso
 
 
 @dataclass(frozen=True)

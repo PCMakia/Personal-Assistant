@@ -22,7 +22,7 @@ from typing import Sequence
 
 import numpy as np
 
-from src.memory_store import MemoryConfig, MemoryStore, _utc_now_iso
+from src.memory_manager.storage.memory_store import MemoryConfig, MemoryStore, _utc_now_iso
 
 
 EMBED_MODEL_DEFAULT = "all-MiniLM-L6-v2"
@@ -282,7 +282,7 @@ def link_clusters_to_heads(
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="python -m src.graph_cluster_build",
+        prog="python -m src.memory_manager.storage.graph_cluster_build",
         description="Build prototype cluster nodes and connect them to concept nodes.",
     )
     parser.add_argument(

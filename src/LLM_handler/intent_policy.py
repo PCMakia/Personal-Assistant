@@ -6,7 +6,7 @@ import re
 from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
-    from src.reasoning_chain import ReasoningChainResult
+    from src.memory_manager.retrieval.reasoning_chain import ReasoningChainResult
 
 
 class IntentClassification(TypedDict):

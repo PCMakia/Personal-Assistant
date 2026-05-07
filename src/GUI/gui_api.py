@@ -42,16 +42,44 @@ class ChatClient:
     def _url(self, path: str) -> str:
         return f"{self.base_url.rstrip('/')}{path}"
 
-    def check_health(self) -> bool:
+    def check_health(self) -> tuple[bool, str]:
+        """Return (api_reachable, short status line for GUI).
+
+        ``/agent/health`` includes Ollama reachability; it does not prove inference works.
+        """
         url = self._url("/agent/health")
         try:
             with httpx.Client(timeout=10.0) as client:
                 resp = client.get(url)
                 resp.raise_for_status()
-            return True
+                data = resp.json()
         except Exception as exc:
             _LOG.warning("Health check failed for %s: %s", url, exc)
-            return False
+            return False, f"API unreachable ({exc})"
+
+        if not isinstance(data, dict) or data.get("status") != "healthy":
+            return False, "API unhealthy"
+
+        model = str(data.get("ollama_model") or "").strip() or "?"
+        ollama = data.get("ollama") if isinstance(data.get("ollama"), dict) else {}
+        reachable = bool(ollama.get("reachable"))
+        present = ollama.get("model_present")
+        detail = ollama.get("detail")
+
+        if not reachable:
+            tail = f" — {detail}" if detail else ""
+            return True, f"API OK · Ollama unreachable{tail}"[:200]
+
+        if present is False:
+            return (
+                True,
+                f"API OK · Ollama up · model {model!r} not installed (ollama pull {model})",
+            )
+
+        return (
+            True,
+            f"API OK · Ollama up · model {model!r} (chat may still fail if model crashes)",
+        )
 
     def send_message(self, message: str) -> Dict[str, Any]:
         with httpx.Client(timeout=self.timeout) as client:
@@ -78,7 +106,13 @@ class ChatClient:
                 self._url("/agent/schedule"),
                 json={"message": message, "session_id": self.session_id},
             )
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                msg = _fastapi_error_detail(exc.response)
+                raise RuntimeError(
+                    msg or f"Server error {exc.response.status_code} for {exc.request.url}"
+                ) from exc
             data = resp.json()
         if not isinstance(data, dict) or "note" not in data:
             raise RuntimeError(f"Unexpected schedule response from server: {data!r}")

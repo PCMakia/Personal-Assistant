@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+.eggs/
+*.egg-info/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local
+.env
+*.log
+/cache/
+/voices/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test outputs
+*.wav
+*.mp3

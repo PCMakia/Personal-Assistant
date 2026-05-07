@@ -16,9 +16,9 @@ class Config:
     # Model settings
     # CustomVoice model has 9 built-in speakers
     # Base model only supports voice cloning (no built-in speakers)
-    MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
-    VOICE_CLONE_MODEL = os.getenv("VOICE_CLONE_MODEL", "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
-    VOICE_DESIGN_MODEL = os.getenv("VOICE_DESIGN_MODEL", "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign")
+    MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice")
+    VOICE_CLONE_MODEL = os.getenv("VOICE_CLONE_MODEL", "Qwen/Qwen3-TTS-12Hz-0.6B-Base")
+    VOICE_DESIGN_MODEL = os.getenv("VOICE_DESIGN_MODEL", "Qwen/Qwen3-TTS-12Hz-0.6B-VoiceDesign")
     DEVICE = os.getenv("DEVICE", "cuda:0")
     DTYPE = os.getenv("DTYPE", "bfloat16")  # bfloat16, float16, float32
     USE_FLASH_ATTENTION = os.getenv("USE_FLASH_ATTENTION", "true").lower() == "true"

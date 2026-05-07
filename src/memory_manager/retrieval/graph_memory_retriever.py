@@ -16,7 +16,7 @@ from typing import Iterable, Sequence
 
 import numpy as np
 
-from src.memory_store import MemoryStore
+from src.memory_manager.storage.memory_store import MemoryStore
 
 
 @dataclass(frozen=True)

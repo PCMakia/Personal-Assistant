@@ -17,7 +17,7 @@ from typing import Iterable, Sequence
 
 import numpy as np
 
-from src.memory_store import MemoryConfig, MemoryStore
+from src.memory_manager.storage.memory_store import MemoryConfig, MemoryStore
 
 EMBED_MODEL_DEFAULT = "all-MiniLM-L6-v2"
 
@@ -86,7 +86,7 @@ def backfill_node_embeddings(
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="python -m src.embedding_backfill",
+        prog="python -m src.memory_manager.storage.embedding_backfill",
         description="Backfill missing nodes.embedding_blob for graph retrieval.",
     )
     parser.add_argument(

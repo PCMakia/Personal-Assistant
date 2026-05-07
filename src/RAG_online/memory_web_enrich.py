@@ -19,8 +19,8 @@ from __future__ import annotations
 import logging
 import os
 
-from src.memory_store import MemoryStore
-from src.reasoning_chain import ReasoningChainResult
+from src.memory_manager.storage.memory_store import MemoryStore
+from src.memory_manager.retrieval.reasoning_chain import ReasoningChainResult
 
 _LOG = logging.getLogger("personal_assistant.memory_web")
 
@@ -41,7 +41,7 @@ def enrich_nodes_from_web_after_turn(
     if not memory_web_enrich_enabled() or not reasoning_result:
         return
 
-    from src.internet_access import web_gloss_for_topic
+    from src.RAG_online.internet_access import web_gloss_for_topic
 
     max_n = max_nodes if max_nodes is not None else int(os.getenv("MEMORY_WEB_ENRICH_MAX_NODES", "2"))
     max_n = max(0, min(max_n, 8))

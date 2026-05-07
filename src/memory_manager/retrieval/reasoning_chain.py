@@ -4,8 +4,8 @@ from collections import defaultdict, deque
 from dataclasses import asdict, dataclass
 from typing import Optional
 
-from src.memory_store import MemoryStore, tokenize
-from src.graph_memory_retriever import GraphRetriever, GraphRetrieverConfig
+from src.memory_manager.storage.memory_store import MemoryStore, tokenize
+from src.memory_manager.retrieval.graph_memory_retriever import GraphRetriever, GraphRetrieverConfig
 
 
 def format_reasoning_block_text(

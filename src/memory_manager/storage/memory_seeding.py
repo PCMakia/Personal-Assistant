@@ -11,8 +11,8 @@ from typing import Iterable, Sequence
 
 import httpx
 
-from src.llm_client import LLMClient
-from src.memory_store import MemoryConfig, MemoryStore, _utc_now_iso, tokenize
+from src.LLM_handler.llm_client import LLMClient
+from src.memory_manager.storage.memory_store import MemoryConfig, MemoryStore, _utc_now_iso, tokenize
 
 
 @dataclass(frozen=True)
@@ -289,7 +289,7 @@ def cluster_and_anchor(
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="python -m src.memory_seeding",
+        prog="python -m src.memory_manager.storage.memory_seeding",
         description="Seed memory.sqlite3 from DOCX/text sources for the agent memory graph.",
     )
     parser.add_argument(

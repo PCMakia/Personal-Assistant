@@ -106,6 +106,8 @@ CHAIN_OF_THOUGHT_TRANSLATION_ARCHITECTURE = (
 
 _MODE_POLICY_WORKING = (
     "Mode=WORKING\n"
+    "- Give confirmation for the request, do not add advices or numbered instructions.\n"
+    "- Limiting the response to 200 words or less.\n"
     "- Optimize for completion: provide actionable steps and concrete outputs.\n"
     "- Prefer bullets/checklists when useful.\n"
     "- If reply already ends with a clear next step/question, do not append redundant next-action lines.\n"
@@ -120,9 +122,10 @@ _MODE_POLICY_DISCUSSING = (
 
 _MODE_POLICY_BANTERING = (
     "Mode=BANTERING\n"
+    "- Prefer confirmation response or disagreement message as a comment to user input.\n"
     "- Be light and playful, but keep it concise and useful.\n"
-    "- Try limiting the response to 100 words or less.\n"
-    "- Do not derail practical help.\n"
+    "- Limiting the response to 120 words or less.\n"
+    "- Do not offer advices.\n"
 )
 
 # --- Optional response situations (phrase + transcript heuristics; see preset picker below) ---
@@ -179,6 +182,7 @@ _RE_NOTE_DOWN = re.compile(r"(?is)^\s*note\s+down\s+")
 _RE_DESCRIBE_OR_REPORT = re.compile(
     r"(?is)^\s*(describe|report\s+about|tell\s+me\s+about)\s+(\S+)"
 )
+# Listening session cues (need multi-language STT model support - not yet implemented)
 _RE_KIITE_OPEN = re.compile(r"(?is)^\s*(きいて|キイテ|kiite)\b[\s,、:：]*")
 _RE_IKA_CLOSE = re.compile(r"(?is)^\s*(いか|イカ|ika)\s*\?\s*$")
 _RE_BANTER_EXPAND = re.compile(

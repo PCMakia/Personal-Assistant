@@ -17,7 +17,7 @@ except Exception as exc:  # pragma: no cover
         "  python -m pip install customtkinter\n"
     ) from exc
 
-from src.gui_api import ChatClient
+from src.GUI.gui_api import ChatClient
 
 
 @dataclass(frozen=True)
@@ -153,8 +153,8 @@ class ChatApp(ctk.CTk):
 
     def refresh_health(self) -> None:
         def worker() -> None:
-            ok = self.client.check_health()
-            self.events.put(_Event("health", (ok,)))
+            ok, line = self.client.check_health()
+            self.events.put(_Event("health", (ok, line)))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -242,13 +242,11 @@ class ChatApp(ctk.CTk):
             while True:
                 ev = self.events.get_nowait()
                 if ev.kind == "health":
-                    (ok,) = ev.payload
+                    ok, line = ev.payload  # type: ignore[misc]
                     if ok:
-                        self._set_status("Connected")
+                        self._set_status(line)
                     else:
-                        self._set_status(
-                            f"Disconnected (no /agent/health from {self.client.base_url})"
-                        )
+                        self._set_status(line)
                 elif ev.kind == "metrics":
                     data, err = ev.payload  # type: ignore[misc]
                     if err is not None:

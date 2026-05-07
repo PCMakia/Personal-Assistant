@@ -7,8 +7,8 @@ from typing import Any, Iterable, Optional
 
 from collections import deque
 
-from src.memory_store import MemoryStore, tokenize
-from src.graph_memory_retriever import GraphRetriever, GraphRetrieverConfig
+from src.memory_manager.storage.memory_store import MemoryStore, tokenize
+from src.memory_manager.retrieval.graph_memory_retriever import GraphRetriever, GraphRetrieverConfig
 
 
 @dataclass(frozen=True)
